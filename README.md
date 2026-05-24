@@ -1,36 +1,117 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# invoice-genie
 
-## Getting Started
+# InvoiceGenie AI
 
-First, run the development server:
+InvoiceGenie AI is a modern Next.js application that converts natural language billing instructions into structured invoices, generates polished PDF invoices, and optionally sends them to clients.
+
+This app is built for freelancers, consultants, and small teams who want to turn a plain-language invoice description into a professional invoice quickly.
+
+## What it does
+
+- Accepts natural language invoice prompts like:
+  - "Invoice Acme Corp for 45 hours of UI design at ₹1200/hr, 30% advance, due in 15 days."
+  - "Bill Startup Ltd for website development ₹65,000, include 3 monthly installments."
+- Uses Google Gemini through a Next.js API route to extract:
+  - client details
+  - invoice items
+  - total amount
+  - due date
+  - advance payment and milestones
+  - currency and notes
+- Displays a preview for review before saving
+- Saves invoices locally in the browser using `localStorage`
+- Generates printable PDF invoices using `jsPDF`
+- Sends invoice emails via SMTP or Resend when configured
+
+## Key features
+
+- AI-powered prompt parsing using Gemini
+- Structured invoice creation from plain text
+- Saved invoice list with status management (`pending`, `paid`, `overdue`)
+- Invoice preview and manual save workflow
+- PDF invoice generation with professional layout
+- Optional email dispatch with attachment support
+- Local persistence for invoice history
+
+## Tech stack
+
+- Next.js 16
+- React 19
+- TypeScript
+- Tailwind CSS
+- Framer Motion
+- jsPDF
+- Google Generative AI (`@google/generative-ai`)
+- Nodemailer / Resend for email delivery
+
+## Project structure
+
+- `src/app/page.tsx` — main dashboard UI
+- `src/components/` — UI components for invoice input, preview, list, reminders
+- `src/lib/invoiceParser.ts` — client helper for invoice extraction API calls
+- `src/lib/pdfGenerator.ts` — invoice PDF generation logic
+- `src/app/api/extract/route.ts` — Gemini extraction API route
+- `src/app/api/email/send/route.ts` — email dispatch API route
+- `src/lib/types.ts` — invoice schema and typed interfaces
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create a `.env.local` file in the project root.
+
+3. Add the required environment variables:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+4. Optionally configure email delivery:
+
+```env
+SMTP_USER=your_smtp_username
+SMTP_PASS=your_smtp_password
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+# or
+RESEND_API_KEY=your_resend_api_key
+```
+
+## Running locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Enter a plain-language invoice prompt in the input area.
+2. The app sends the prompt to `/api/extract` and parses invoice details.
+3. Review the parsed invoice preview.
+4. Save the invoice to your local invoice list.
+5. From the invoice list, update invoice status or send email if configured.
 
-## Learn More
+## Environment variables
 
-To learn more about Next.js, take a look at the following resources:
+- `GEMINI_API_KEY` — required for AI-based invoice extraction
+- `SMTP_USER`, `SMTP_PASS`, `SMTP_HOST`, `SMTP_PORT` — optional SMTP settings for actual email delivery
+- `RESEND_API_KEY` — optional Resend email delivery fallback
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Invoice data is stored in browser `localStorage`, so it persists only on the same machine and browser.
+- If email settings are not configured, the app falls back to a development mock mode and logs email content to the server console.
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+This app can be deployed to Vercel or any platform that supports Next.js 16 and Node.js serverless functions.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+This repository is currently private.
