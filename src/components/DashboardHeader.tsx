@@ -66,12 +66,19 @@ export default function DashboardHeader({ stats, currencySymbol, onApiKeyChange 
         
         {/* Branding */}
         <div className="flex items-center gap-3 relative z-10">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-            <Sparkles className="h-5 w-5 text-white animate-pulse" />
-          </div>
+          <img 
+            src="/logo.jpg" 
+            alt="InvoiceGenie Logo" 
+            className="h-10 w-10 object-contain rounded-xl bg-white p-0.5 border border-slate-800 shadow-lg shadow-indigo-500/10"
+          />
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
-              InvoiceGenie <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-medium">AI</span>
+            <h1 
+              className="text-xl tracking-tight flex items-baseline gap-0.5 select-none"
+              style={{ fontFamily: 'ui-rounded, "Plus Jakarta Sans", "Quicksand", sans-serif' }}
+            >
+              <span className="text-white font-normal">invoice</span>
+              <span className="text-blue-500 font-bold">genie</span>
+              <span className="text-[10px] px-2 py-0.5 ml-1.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium font-sans">AI</span>
             </h1>
             <p className="text-xs text-slate-400 font-medium">AI Billing Assistant</p>
           </div>

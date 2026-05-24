@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Invoice, InvoiceItem } from '../lib/types';
-import { downloadInvoicePDF, generateInvoicePDFInstance } from '../lib/pdfGenerator';
+import { Invoice, InvoiceItem, PaymentMilestone } from '../lib/types';
+import { downloadInvoicePDF, generateInvoicePDFInstance, loadImage } from '../lib/pdfGenerator';
 import { 
   FileText, Download, Save, Plus, Trash2, User, Mail, MapPin, 
   Calendar, CreditCard, ChevronRight, Settings 
@@ -31,6 +31,7 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
   const [notes, setNotes] = useState('');
   const [currency, setCurrency] = useState('₹');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [paymentMilestones, setPaymentMilestones] = useState<PaymentMilestone[]>([]);
 
   // Populate state from Gemini AI extraction results
   useEffect(() => {
@@ -76,6 +77,18 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
       
       setAdvancePaid(Number(initialData.advancePayment) || 0);
       setNotes(initialData.notes || '');
+
+      // Format milestones from AI extraction results
+      const extractedMilestones = (initialData.paymentMilestones || []).map((m: any) => {
+        return {
+          id: Math.random().toString(36).substring(2, 9),
+          name: m.name || 'Milestone Installment',
+          amount: Number(m.amount) || 0,
+          dueDate: m.dueDate || new Date().toISOString().split('T')[0],
+          status: 'pending' as const,
+        };
+      });
+      setPaymentMilestones(extractedMilestones);
     }
   }, [initialData]);
 
@@ -83,6 +96,8 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
   const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
   const totalAmount = subtotal;
   const balanceDue = Math.max(0, totalAmount - advancePaid);
+  const milestonesTotal = paymentMilestones.reduce((sum, m) => sum + m.amount, 0);
+  const isMilestonesBalanced = milestonesTotal === totalAmount;
 
   const handleItemChange = (id: string, field: keyof InvoiceItem, value: any) => {
     setItems((prevItems) =>
@@ -138,11 +153,55 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
       status: 'pending',
       currency,
       createdAt: new Date().toISOString(),
+      paymentMilestones: paymentMilestones.length > 0 ? paymentMilestones : undefined,
     };
   };
 
   const handleDownloadPDF = () => {
     downloadInvoicePDF(getInvoicePayload());
+  };
+
+  const handleMilestoneChange = (id: string, field: keyof PaymentMilestone, value: any) => {
+    setPaymentMilestones((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, [field]: value } : m))
+    );
+  };
+
+  const handleAddMilestone = () => {
+    const newMilestone: PaymentMilestone = {
+      id: Math.random().toString(36).substring(2, 9),
+      name: `Milestone ${paymentMilestones.length + 1}`,
+      amount: 0,
+      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      status: 'pending',
+    };
+    setPaymentMilestones([...paymentMilestones, newMilestone]);
+  };
+
+  const handleRemoveMilestone = (id: string) => {
+    setPaymentMilestones(paymentMilestones.filter((m) => m.id !== id));
+  };
+
+  const handleSplitEMIs = (count: number) => {
+    if (count <= 1) return;
+    const splitAmount = Math.round(totalAmount / count);
+    const newMilestones: PaymentMilestone[] = [];
+    
+    for (let i = 0; i < count; i++) {
+      const offsetDays = i * 30;
+      const milestoneDueDate = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0];
+        
+      newMilestones.push({
+        id: Math.random().toString(36).substring(2, 9),
+        name: `Installment ${i + 1} of ${count} (EMI)`,
+        amount: i === count - 1 ? totalAmount - (splitAmount * (count - 1)) : splitAmount,
+        dueDate: milestoneDueDate,
+        status: 'pending',
+      });
+    }
+    setPaymentMilestones(newMilestones);
   };
 
   const handleEmailClient = async () => {
@@ -154,7 +213,8 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
     setIsSendingEmail(true);
     try {
       const payload = getInvoicePayload();
-      const doc = generateInvoicePDFInstance(payload);
+      const logoImg = await loadImage('/logo.jpg');
+      const doc = generateInvoicePDFInstance(payload, logoImg);
       const base64Data = doc.output('datauristring').split(',')[1];
       const filename = `${payload.invoiceNumber}_${payload.clientName.replace(/\s+/g, '_')}.pdf`;
 
@@ -172,6 +232,7 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
           filename: filename,
           amount: payload.amount,
           currency: payload.currency,
+          paymentMilestones: payload.paymentMilestones,
         }),
       });
 
@@ -437,6 +498,128 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
           </div>
         </div>
 
+        {/* Payment Milestones & EMI Splits Section */}
+        <div className="border-t border-slate-800/80 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              <CreditCard className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Payment Milestones & EMI Splits</span>
+            </div>
+            
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSplitEMIs(2)}
+                className="px-2 py-1 rounded bg-slate-850 hover:bg-slate-805 border border-slate-750 text-slate-350 hover:text-white text-[10px] font-semibold transition"
+              >
+                2 EMIs
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSplitEMIs(3)}
+                className="px-2 py-1 rounded bg-slate-850 hover:bg-slate-805 border border-slate-750 text-slate-350 hover:text-white text-[10px] font-semibold transition"
+              >
+                3 EMIs
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSplitEMIs(4)}
+                className="px-2 py-1 rounded bg-slate-850 hover:bg-slate-805 border border-slate-750 text-slate-350 hover:text-white text-[10px] font-semibold transition"
+              >
+                4 EMIs
+              </button>
+              <button
+                type="button"
+                onClick={handleAddMilestone}
+                className="flex items-center gap-0.5 px-2 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 hover:text-indigo-300 text-[10px] font-semibold border border-indigo-500/20 transition"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Custom</span>
+              </button>
+              {paymentMilestones.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMilestones([])}
+                  className="px-2 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-350 text-[10px] font-semibold border border-rose-500/20 transition"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {paymentMilestones.length > 0 ? (
+            <div className="flex flex-col gap-2 max-h-52 overflow-y-auto pr-1 mb-3">
+              {paymentMilestones.map((milestone) => (
+                <div key={milestone.id} className="flex gap-2 items-center bg-slate-950/40 border border-slate-850 p-2 rounded-xl">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      placeholder="Milestone description"
+                      value={milestone.name}
+                      onChange={(e) => handleMilestoneChange(milestone.id, 'name', e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Amount"
+                      value={milestone.amount === 0 ? '' : milestone.amount}
+                      onChange={(e) => handleMilestoneChange(milestone.id, 'amount', Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-right text-white focus:outline-none"
+                    />
+                  </div>
+                  <div className="w-32">
+                    <input
+                      type="date"
+                      value={milestone.dueDate}
+                      onChange={(e) => handleMilestoneChange(milestone.id, 'dueDate', e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMilestone(milestone.id)}
+                    className="p-1.5 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 bg-slate-950/20 border border-dashed border-slate-850 rounded-xl mb-3">
+              <p className="text-[11px] text-slate-500 font-medium">No payment split schedule configured. Use quick split buttons to generate EMIs or add custom milestones.</p>
+            </div>
+          )}
+
+          {/* Validation indicators */}
+          {paymentMilestones.length > 0 && (
+            <div className={`p-2.5 rounded-lg text-xs font-semibold mb-3 ${
+              isMilestonesBalanced 
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' 
+                : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+            }`}>
+              {isMilestonesBalanced ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>✓ Milestones fully balanced ({currency}{milestonesTotal.toLocaleString('en-IN')} / {currency}{totalAmount.toLocaleString('en-IN')})</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" />
+                    <span>⚠ Milestones total ({currency}{milestonesTotal.toLocaleString('en-IN')}) does not match Invoice total ({currency}{totalAmount.toLocaleString('en-IN')})</span>
+                  </div>
+                  <span>Diff: {currency}{(totalAmount - milestonesTotal).toLocaleString('en-IN')}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Footer Actions */}
         <div className="flex flex-col sm:flex-row gap-3 border-t border-slate-800/80 pt-4 mt-2">
           <button
@@ -473,58 +656,73 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
       {/* RIGHT COLUMN: Realistic visual mockup */}
       <div className="lg:col-span-5 flex flex-col gap-3 lg:sticky lg:top-6 select-none">
         <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider ml-1">Live Invoice Document Mockup</span>
-        <div className="w-full bg-[#fcfaf2] text-[#222222] font-serif p-7 rounded-lg shadow-2xl border-double border-4 border-[#333333] relative aspect-[1/1.4] overflow-hidden flex flex-col text-[11px] leading-relaxed select-text">
-          {/* Decorative grain/ink bleed effect */}
-          <div className="absolute inset-0 bg-[radial-gradient(#333_1px,transparent_1px)] [background-size:16px_16px] opacity-[0.02] pointer-events-none" />
+        <div className="w-full bg-white text-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-200 relative aspect-[1/1.4] overflow-hidden flex flex-col text-[11px] leading-tight select-text">
+          {/* Decorative invoice background stripes / subtle glow */}
+          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Document Header (Vintage Masthead) */}
-          <div className="text-center mb-5">
-            <h3 className="text-lg font-bold text-[#111111] uppercase tracking-[0.2em]">INVOICE GENIE</h3>
-            <div className="text-[7.5px] text-[#555555] tracking-[0.25em] uppercase mt-1">AUTOMATED BILL OF LEDGER</div>
-            <div className="border-t border-[#333333] my-1 w-24 mx-auto" />
-            <div className="text-[9px] italic text-[#444444] font-semibold mt-1">
-              Doc. No. {invoiceNumber || 'INV-XXX'}
+          {/* Document Header */}
+          <div className="flex justify-between items-start mb-6">
+            <div className="flex items-center gap-2">
+              <img 
+                src="/logo.jpg" 
+                alt="Logo" 
+                className="h-9 w-9 object-contain rounded bg-white border border-slate-100 p-0.5" 
+              />
+              <div>
+                <h3 
+                  className="text-[14px] tracking-tight flex items-baseline gap-0.5 select-none"
+                  style={{ fontFamily: 'ui-rounded, "Plus Jakarta Sans", "Quicksand", sans-serif' }}
+                >
+                  <span className="text-slate-800 font-normal leading-none">invoice</span>
+                  <span className="text-blue-600 font-bold leading-none">genie</span>
+                </h3>
+                <p className="text-[8px] text-slate-400 font-semibold tracking-wide mt-0.5">AI Billing Assistant</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <h4 className="text-lg font-bold text-indigo-600 tracking-tight">INVOICE</h4>
+              <p className="text-[9px] text-slate-700 font-bold mt-0.5">{invoiceNumber || 'INV-XXX'}</p>
             </div>
           </div>
 
-          <div className="border-b-2 border-t border-double border-[#333333] py-0.5 my-1" />
+          <div className="border-b border-slate-100 my-2" />
 
           {/* Client & Sender details grid */}
           <div className="grid grid-cols-2 gap-4 my-2 text-[9px]">
             <div>
-              <div className="font-bold text-[#111111] uppercase tracking-wider mb-1 border-b border-[#333333]/30 pb-0.5">I. ISSUED BY:</div>
+              <div className="font-bold text-indigo-600 mb-1 uppercase tracking-wider">FROM:</div>
               <div className="font-bold text-slate-900">{senderName || 'Your Name / Co.'}</div>
-              {senderEmail && <div className="text-[#555555] font-mono text-[8px]">{senderEmail}</div>}
-              {senderAddress && <div className="text-[#555555] max-w-[140px] truncate">{senderAddress}</div>}
+              {senderEmail && <div className="text-slate-500">{senderEmail}</div>}
+              {senderAddress && <div className="text-slate-500 max-w-[140px] truncate">{senderAddress}</div>}
             </div>
             <div>
-              <div className="font-bold text-[#111111] uppercase tracking-wider mb-1 border-b border-[#333333]/30 pb-0.5">II. BILLED TO:</div>
+              <div className="font-bold text-indigo-600 mb-1 uppercase tracking-wider">BILLED TO:</div>
               <div className="font-bold text-slate-900">{clientName || 'Client Name / Co.'}</div>
-              {clientEmail && <div className="text-[#555555] font-mono text-[8px]">{clientEmail}</div>}
-              {clientAddress && <div className="text-[#555555] max-w-[140px] truncate">{clientAddress}</div>}
+              {clientEmail && <div className="text-slate-500">{clientEmail}</div>}
+              {clientAddress && <div className="text-slate-500 max-w-[140px] truncate">{clientAddress}</div>}
             </div>
           </div>
 
           {/* Dates highlight container */}
-          <div className="border border-[#333333]/80 bg-[#f5f1e5] p-2.5 rounded my-2.5 grid grid-cols-3 gap-2 text-[8px] font-semibold text-[#444444]">
+          <div className="bg-slate-50 p-2.5 rounded-lg my-2 grid grid-cols-3 gap-2 text-[8px] font-semibold text-slate-500">
             <div>
-              <div className="text-[7px] text-[#666666] uppercase tracking-wider">DATE ISSUED:</div>
-              <div className="text-[#111111] mt-0.5 font-bold">{date || 'YYYY-MM-DD'}</div>
+              <div className="text-[7px] text-slate-400 uppercase">DATE ISSUED</div>
+              <div className="text-slate-800 mt-0.5 font-bold">{date || 'YYYY-MM-DD'}</div>
             </div>
             <div>
-              <div className="text-[7px] text-[#666666] uppercase tracking-wider">DUE DATE:</div>
-              <div className="text-[#111111] mt-0.5 font-bold">{dueDate || 'YYYY-MM-DD'}</div>
+              <div className="text-[7px] text-slate-400 uppercase">DUE DATE</div>
+              <div className="text-slate-800 mt-0.5 font-bold">{dueDate || 'YYYY-MM-DD'}</div>
             </div>
             <div>
-              <div className="text-[7px] text-[#666666] uppercase tracking-wider">STATUS:</div>
-              <div className="text-[#742a2a] mt-0.5 font-bold uppercase tracking-wider">PENDING</div>
+              <div className="text-[7px] text-slate-400 uppercase">STATUS</div>
+              <div className="text-indigo-600 mt-0.5 font-bold uppercase">PENDING</div>
             </div>
           </div>
 
           {/* Items Mock Table */}
-          <div className="flex-1 mt-3">
-            <div className="grid grid-cols-12 border-t-2 border-b-2 border-double border-[#333333] py-1 px-2.5 font-bold text-[8px] tracking-wider mb-1.5 text-[#111111] uppercase">
-              <span className="col-span-7">DESCRIPTION OF WORK</span>
+          <div className="flex-1 mt-4">
+            <div className="grid grid-cols-12 bg-slate-900 text-white py-1.5 px-2.5 rounded font-bold text-[8px] tracking-wider mb-1.5 uppercase">
+              <span className="col-span-7">DESCRIPTION</span>
               <span className="col-span-1 text-center">QTY</span>
               <span className="col-span-2 text-right">RATE</span>
               <span className="col-span-2 text-right">TOTAL</span>
@@ -534,16 +732,18 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
               {items.map((item, idx) => (
                 <div 
                   key={item.id} 
-                  className="grid grid-cols-12 py-2 px-2.5 border-b border-[#333333]/20"
+                  className={`grid grid-cols-12 py-1.5 px-2.5 border-b border-slate-100 ${
+                    idx % 2 === 1 ? 'bg-slate-50' : ''
+                  }`}
                 >
-                  <span className="col-span-7 text-[#222222] pr-2 truncate">
-                    {item.description || <span className="text-slate-400 italic">No description specified</span>}
+                  <span className="col-span-7 font-medium text-slate-800 pr-2 truncate">
+                    {item.description || <span className="text-slate-300 italic">No description</span>}
                   </span>
-                  <span className="col-span-1 text-center text-[#222222] font-semibold">{item.quantity}</span>
-                  <span className="col-span-2 text-right text-[#333333] font-mono">
+                  <span className="col-span-1 text-center text-slate-500 font-bold">{item.quantity}</span>
+                  <span className="col-span-2 text-right text-slate-655 font-semibold">
                     {currency} {item.rate.toLocaleString('en-IN')}
                   </span>
-                  <span className="col-span-2 text-right font-bold text-[#111111] font-mono">
+                  <span className="col-span-2 text-right font-bold text-slate-800">
                     {currency} {item.amount.toLocaleString('en-IN')}
                   </span>
                 </div>
@@ -552,34 +752,55 @@ export default function InvoicePreview({ initialData, onSave, onCancel }: Invoic
           </div>
 
           {/* Invoice Summary columns */}
-          <div className="mt-3 flex flex-col items-end gap-1.5 text-[9px] border-t border-[#333333]/20 pt-2.5">
-            <div className="flex justify-between w-40 text-[#444444]">
+          <div className="mt-4 flex flex-col items-end gap-1.5 text-[9px] border-t border-slate-100 pt-3">
+            <div className="flex justify-between w-40 text-slate-500">
               <span>Subtotal:</span>
-              <span className="font-semibold font-mono text-[#222222]">{currency} {subtotal.toLocaleString('en-IN')}</span>
+              <span className="font-semibold text-slate-700">{currency} {subtotal.toLocaleString('en-IN')}</span>
             </div>
             {advancePaid > 0 && (
-              <div className="flex justify-between w-40 text-[#444444]">
+              <div className="flex justify-between w-40 text-slate-500">
                 <span>Advance Paid:</span>
-                <span className="font-semibold font-mono text-[#222222]">- {currency} {advancePaid.toLocaleString('en-IN')}</span>
+                <span className="font-semibold text-slate-700">- {currency} {advancePaid.toLocaleString('en-IN')}</span>
               </div>
             )}
-            <div className="flex justify-between w-40 text-[#111111] border-t-2 border-b-2 border-double border-[#333333] py-1 font-bold text-xs mt-1">
-              <span className="text-[9px] self-end mb-0.5 uppercase tracking-wider">Balance Due:</span>
-              <span className="font-mono text-[#742a2a]">{currency} {balanceDue.toLocaleString('en-IN')}</span>
+            <div className="flex justify-between w-40 text-slate-900 border-t border-slate-200 pt-1 font-bold text-sm">
+              <span className="text-slate-500 text-[10px] self-end mb-0.5">Balance Due:</span>
+              <span className="text-indigo-600">{currency} {balanceDue.toLocaleString('en-IN')}</span>
             </div>
           </div>
 
+          {/* Payment Schedule (if milestones exist) */}
+          {paymentMilestones && paymentMilestones.length > 0 && (
+            <div className="mt-4 border-t border-slate-100 pt-3">
+              <div className="font-bold text-indigo-600 text-[8px] uppercase tracking-wider mb-1.5 text-left">Payment Schedule / EMIs</div>
+              <div className="flex flex-col gap-1 text-[8px]">
+                <div className="grid grid-cols-12 font-bold text-slate-400 border-b border-slate-50 pb-0.5 mb-1 uppercase">
+                  <span className="col-span-6 text-left">Installment / Milestone</span>
+                  <span className="col-span-3 text-center">Due Date</span>
+                  <span className="col-span-3 text-right">Amount</span>
+                </div>
+                {paymentMilestones.map((m) => (
+                  <div key={m.id} className="grid grid-cols-12 py-0.5 text-slate-700">
+                    <span className="col-span-6 font-semibold truncate text-left">{m.name}</span>
+                    <span className="col-span-3 text-center text-slate-500">{m.dueDate}</span>
+                    <span className="col-span-3 text-right font-bold text-slate-800">{currency} {m.amount.toLocaleString('en-IN')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Notes column */}
           {notes && (
-            <div className="mt-3 text-[7.5px] leading-relaxed border-t border-[#333333]/20 pt-2.5">
-              <div className="font-bold text-[#111111] uppercase tracking-wider mb-0.5">Notes & Terms:</div>
-              <p className="text-[#444444] whitespace-pre-wrap italic">{notes}</p>
+            <div className="mt-4 text-[7.5px] leading-relaxed border-t border-slate-100 pt-3">
+              <div className="font-bold text-indigo-600 uppercase mb-0.5">Notes & Instructions:</div>
+              <p className="text-slate-400 font-medium whitespace-pre-wrap">{notes}</p>
             </div>
           )}
 
           {/* Tiny paper mark */}
-          <div className="mt-auto pt-4 text-[7px] text-center text-[#666666] border-t border-[#333333]/20 italic">
-            Rendered in the old-fashioned way by InvoiceGenie AI.
+          <div className="mt-auto pt-6 text-[7px] text-center text-slate-400 border-t border-slate-100 italic">
+            This document was automatically generated by InvoiceGenie AI.
           </div>
         </div>
       </div>
