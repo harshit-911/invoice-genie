@@ -106,6 +106,28 @@ export async function POST(req: Request) {
             required: ['description', 'quantity', 'rate'],
           },
         },
+        paymentMilestones: {
+          type: SchemaType.ARRAY,
+          description: 'Breakdown of payment stages, installments, or EMI splits if requested or implied in the prompt (e.g. "3 equal monthly EMIs", "30% advance and 70% delivery"). Each installment must specify a name, amount, and due date.',
+          items: {
+            type: SchemaType.OBJECT,
+            properties: {
+              name: {
+                type: SchemaType.STRING,
+                description: 'Name of the milestone or installment index (e.g., "Installment 1 / Milestone 1", "Kickoff Payment", "EMI 2/3").',
+              },
+              amount: {
+                type: SchemaType.NUMBER,
+                description: 'The absolute cost/fee for this milestone. The sum of all milestones must exactly equal the total invoice amount.',
+              },
+              dueDate: {
+                type: SchemaType.STRING,
+                description: 'Due date in YYYY-MM-DD format. Spaced logically (e.g. if "3 monthly EMIs", space them today, today + 30 days, today + 60 days).',
+              },
+            },
+            required: ['name', 'amount', 'dueDate'],
+          },
+        },
       },
       required: ['clientName', 'items'],
     };
@@ -119,7 +141,10 @@ export async function POST(req: Request) {
     1. The "amount" for each item must be equal to quantity * rate.
     2. Sum the item amounts to find the total invoice amount.
     3. If the user mentions a percentage-based advance (e.g., "50% advance", "10% deposit"), compute the absolute advance payment value based on the total. E.g., if total is 12000 and advance is "50%", advancePayment = 6000.
-    4. Default to currency "₹" if not specified.
+    4. If the prompt specifies installment splits, payment schedules, or EMIs (e.g., "3 equal installments", "50% today, 50% on completion in 30 days"), generate the list of "paymentMilestones".
+       - Spacing dates: Calculate installment due dates relative to today. Spaced equal monthly EMIs should be spaced 30 days apart (e.g., today, today+30 days, today+60 days).
+       - Ensuring balance: Sum of all milestone amounts must exactly equal the sum of all item total amounts.
+    5. Default to currency "₹" if not specified.
     
     Strictly conform to the provided JSON schema. Do not return any other text besides the JSON.`;
 

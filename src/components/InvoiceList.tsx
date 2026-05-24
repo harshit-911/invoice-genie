@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Invoice, InvoiceStatus } from '../lib/types';
-import { downloadInvoicePDF, generateInvoicePDFInstance } from '../lib/pdfGenerator';
+import { downloadInvoicePDF, generateInvoicePDFInstance, loadImage } from '../lib/pdfGenerator';
 import { 
   History, Calendar, ToggleLeft, ToggleRight, MessageSquare, 
   Trash2, Download, Check, AlertTriangle, Clock, RefreshCw, Mail 
@@ -33,7 +33,8 @@ export default function InvoiceList({
 
     setSendingInvoiceId(invoice.id);
     try {
-      const doc = generateInvoicePDFInstance(invoice);
+      const logoImg = await loadImage('/logo.jpg');
+      const doc = generateInvoicePDFInstance(invoice, logoImg);
       const base64Data = doc.output('datauristring').split(',')[1];
       const filename = `${invoice.invoiceNumber}_${invoice.clientName.replace(/\s+/g, '_')}.pdf`;
 
@@ -51,6 +52,7 @@ export default function InvoiceList({
           filename: filename,
           amount: invoice.amount,
           currency: invoice.currency,
+          paymentMilestones: invoice.paymentMilestones,
         }),
       });
 
@@ -174,6 +176,11 @@ export default function InvoiceList({
                         <span className="text-xs font-medium text-slate-400">to</span>
                         <span className="text-xs font-bold text-indigo-400">{invoice.clientName}</span>
                         {getStatusBadge(invoice.status)}
+                        {invoice.paymentMilestones && invoice.paymentMilestones.length > 0 && (
+                          <span className="flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 uppercase tracking-wider shrink-0">
+                            {invoice.paymentMilestones.length} EMIs
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-4 text-[11px] text-slate-500 font-medium">
                         <span className="flex items-center gap-1">
